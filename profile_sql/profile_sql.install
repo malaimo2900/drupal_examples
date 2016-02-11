@@ -1,0 +1,96 @@
+<?php
+
+function profile_sql_schema() {
+    $test_data = array(
+        'fields' => array(
+            'id' => array(
+                'type' => 'serial',
+                'size' => 'normal',
+                'not null' => TRUE
+                ),
+            'url' => array(
+                'type' => 'varchar',
+                'length' => 200,
+                'not null' => TRUE
+                ),
+            'http_status_code' => array(
+                'type' => 'int',
+                'size' => 'small',
+                'not null' => TRUE,
+                'default' => '0'
+                ),
+            'response_length' => array(
+                'type' => 'int',
+                'not null' => TRUE,
+                'default' => '0'
+                ),
+            'response_time' => array(
+                'type' => 'float',
+                'precision' => 10,
+                'scale'  => 5,
+                'not null' => TRUE,
+                'default' => '0'
+                ),
+            'redirect_count' => array(
+                'type' => 'int',
+                'size' => 'small',
+                'not null' => TRUE,
+                'default' => '0'
+            ),
+            'content_type' => array(
+                'type' => 'char',
+                'length' => 25,
+                'not null' => TRUE
+            )
+        ),
+        'primary key' => array('id')
+    );
+    
+    $schema['test_data'] = $test_data;
+
+    $test_data['indexes'] = array(
+            'response_time' => array('response_time'),
+            'response_length' => array('response_length'),
+            'http_status_code' => array('http_status_code')
+        );
+    $schema['test_data_indexes'] = $test_data;
+    
+    return $schema;
+}
+
+function profile_sql_install() {
+    $file = drupal_get_path('module', 'profile_sql').'/profile_sql.csv';
+    
+    $fh = fopen($file, 'r');
+    
+    if (!is_readable($file))
+    {
+        drupal_set_message('Unable to read profile_sql insatll csv file', 'error');
+    }
+    else
+    {
+        while (($row = fgetcsv($fh))) {
+            $data = array(
+                  'url' => $row[1],
+                  'http_status_code' => $row[2],
+                  'response_length' => $row[3],
+                  'response_time' => $row[4],
+                  'redirect_count' => $row[5],
+                  'content_type' => $row[6]
+                );
+            db_insert('test_data')
+                ->fields($data)
+                ->execute();
+            db_insert('test_data_indexes')
+                ->fields($data)
+                ->execute();
+        }
+    }
+    fclose($fh);
+}
+
+function profile_sql_uninstall() {
+    drupal_uninstall_schema('profile_sql');
+}
+
+?>

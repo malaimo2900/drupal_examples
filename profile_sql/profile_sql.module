@@ -1,0 +1,217 @@
+<?php
+
+define('QF_ADMIN_PERM', 'qf profile admin');
+define('QF_PROFILE_LIMIT', 100);
+define('QF_BLOCK_NAME', 'MySQL Profile Graph Display');
+
+function profile_sql_permission() {
+    return array(QF_ADMIN_PERM => array(
+            'title' => t('QF Profile Settings'),
+            'description' => t('Will enable a user to view the Profile Graph')
+    ));
+}
+
+function profile_sql_menu() {
+    $items = [];
+
+    $items['mysql_profile'] = array(
+        'title' => 'Graph display of a MySQL profile comparision',
+        'page callback' => 'profile_sql',
+        'access arguments' => array(QF_ADMIN_PERM)
+    );
+
+    return $items;
+}
+
+function _profile_sql_get($sql) {
+    $output = [];
+
+    db_query('SET profiling = 1');
+    for ($i = 1; $i <= QF_PROFILE_LIMIT; $i++) {
+        db_query($sql);
+        $result = db_query('SHOW PROFILE');
+
+        foreach ($result as $test) {
+            $key = strtolower(str_replace(' ', '_', $test->Status));
+            if (!isset($output[$key])) {
+                $output[$key] = 0;
+            }
+            $output[$key] += $test->Duration;
+        }
+    }
+    db_query('SET profiling = 0');
+
+    $output = array_map(function($v) {
+        return $v / QF_PROFILE_LIMIT;
+    }, $output);
+    $output['total'] = array_sum($output);
+
+    return $output;
+}
+
+function profile_sql() {
+    $sql1 = 'SELECT * FROM test_data WHERE http_status_code > 201 order by http_status_code desc';
+    $sql2 = 'SELECT * FROM test_data_indexes WHERE http_status_code > 201 order by http_status_code desc';
+
+    //db_query('SET SESSION query_cache_type = OFF');
+
+    $k1 = md5($sql1);
+    $k2 = md5($sql2);
+
+    $output = array(
+        $k1 => _profile_sql_get($sql1),
+        $k2 => _profile_sql_get($sql2)
+    );
+
+    $sql1Data = implode(", ", array_values($output[$k1]));
+    $sql1Keys = json_encode(array_keys($output[$k1]));
+
+    $sql2Data = implode(", ", array_values($output[$k2]));
+    $sql2Keys = json_encode(array_keys($output[$k2]));
+
+    $title = 'MySQL Profile of two Queries ' . QF_PROFILE_LIMIT . ' times';
+
+    drupal_add_js('http://code.highcharts.com/highcharts.js');
+    drupal_add_js('http://code.highcharts.com/modules/exporting.js');
+    drupal_add_js(<<<EOT
+            	jQuery(document).ready(function ($) {
+    $('#container1').highcharts({
+        chart: {
+            type: 'column'
+        },
+        title: {
+            text: '{$title}'
+        },
+        xAxis: {
+            categories: {$sql1Keys},
+            title: {
+                text: null
+            }
+        },
+        yAxis: {
+            min: 0,
+            title: {
+                text: 'Duration',
+                align: 'high'
+            },
+            labels: {
+                overflow: 'justify'
+            }
+        },
+        plotOptions: {
+            bar: {
+                dataLabels: {
+                    enabled: true
+                }
+            }
+        },
+        legend: {
+            layout: 'vertical',
+            align: 'right',
+            verticalAlign: 'top',
+            x: -40,
+            y: 80,
+            floating: true,
+            borderWidth: 1,
+            backgroundColor: ((Highcharts.theme && Highcharts.theme.legendBackgroundColor) || '#FFFFFF'),
+            shadow: true
+        },
+        credits: {
+            enabled: false
+        },
+        series: [{
+            name: 'SQL 1 No Indexes',
+            data: [{$sql1Data}]
+        }]
+    });
+        $('#container2').highcharts({
+        chart: {
+            type: 'column'
+        },
+        title: {
+            text: '{$title}'
+        },
+        xAxis: {
+            categories: {$sql2Keys},
+            title: {
+                text: null
+            }
+        },
+        yAxis: {
+            min: 0,
+            title: {
+                text: 'Duration',
+                align: 'high'
+            },
+            labels: {
+                overflow: 'justify'
+            }
+        },
+        plotOptions: {
+            bar: {
+                dataLabels: {
+                    enabled: true
+                }
+            }
+        },
+        legend: {
+            layout: 'vertical',
+            align: 'right',
+            verticalAlign: 'top',
+            x: -40,
+            y: 80,
+            floating: true,
+            borderWidth: 1,
+            backgroundColor: ((Highcharts.theme && Highcharts.theme.legendBackgroundColor) || '#FFFFFF'),
+            shadow: true
+        },
+        credits: {
+            enabled: false
+        },
+        series: [{
+            name: 'SQL 2 With Indexes',
+            data: [{$sql2Data}]
+        }]
+    });
+});
+EOT
+            , array('type' => 'inline'));
+
+    return array(
+        '1' => array('#markup' => '<div id="container1" style="min-width: 310px; max-width: 800px; height: 400px; margin: 0 auto"></div>'),
+        '2' => array('#markup' => '<div id="container2" style="min-width: 310px; max-width: 800px; height: 400px; margin: 0 auto"></div>'),
+        '3' => array('#markup' => '<div class="messages status"><h1>SQL 1</h1><p>' . $sql1 . '</p></div>'),
+        '4' => array('#markup' => '<div class="messages status"><h1>SQL 2</h1><p>' . $sql2 . '</p></div>')
+    );
+}
+
+function profile_sql_block_info() {
+    return array(
+        'profile_sql_block' => array(
+            'info' => t(QF_BLOCK_NAME),
+            'cache' => DRUPAL_CACHE_GLOBAL,
+        )
+    );
+}
+
+function profile_sql_block_view($delta = '') {
+    $block = [];
+
+    if (user_access(QF_ADMIN_PERM)) {
+        switch ($delta) {
+            case 'profile_sql_block':
+                $html = profile_sql();
+                $block['subject'] = t(QF_BLOCK_NAME);
+                $block['content'] = array(
+                    'link' => array(
+                        '#type' => 'link',
+                        '#title' => t(QF_BLOCK_NAME),
+                        '#href' => 'mysql_profile',
+                        '#weight' => 1,
+                    )
+                );
+                break;
+        }
+    }
+    return $block;
+}

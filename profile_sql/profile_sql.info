@@ -1,0 +1,6 @@
+name = Profile SQL
+description = Displays MySQL profile in a graph
+core = 7.x
+package = Quantum Foam Drupal
+php = 5.6
+version = 1.0
